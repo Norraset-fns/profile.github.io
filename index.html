@@ -432,149 +432,223 @@
     </div>
 
     <script>
-        class YouTubeDownloader {
-            constructor() {
-                this.form = document.getElementById('downloadForm');
-                this.urlInput = document.getElementById('videoUrl');
-                this.downloadBtn = document.getElementById('downloadBtn');
-                this.loading = document.getElementById('loading');
-                this.error = document.getElementById('error');
-                this.success = document.getElementById('success');
-                this.videoInfo = document.getElementById('videoInfo');
+        // เพิ่มในส่วน <script> ของ HTML
+class YouTubeDownloader {
+    constructor() {
+        this.form = document.getElementById('downloadForm');
+        this.urlInput = document.getElementById('videoUrl');
+        this.downloadBtn = document.getElementById('downloadBtn');
+        this.loading = document.getElementById('loading');
+        this.error = document.getElementById('error');
+        this.success = document.getElementById('success');
+        
+        // API endpoints (ใช้ Public APIs)
+        this.APIs = {
+            // RapidAPI - YouTube Downloader
+            rapidAPI: {
+                url: 'https://youtube-mp36.p.rapidapi.com/dl',
+                key: 'YOUR_RAPIDAPI_KEY', // ต้องสมัครใน RapidAPI
+                headers: {
+                    'X-RapidAPI-Key': 'YOUR_RAPIDAPI_KEY',
+                    'X-RapidAPI-Host': 'youtube-mp36.p.rapidapi.com'
+                }
+            },
+            
+            // Alternative: youtube-dl-exec API
+            alternative: {
+                url: 'https://api.vevioz.com/api/button/mp3/320',
+            }
+        };
+        
+        this.init();
+    }
+
+    init() {
+        this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+        this.urlInput.addEventListener('input', () => this.hideMessages());
+    }
+
+    hideMessages() {
+        this.error.style.display = 'none';
+        this.success.style.display = 'none';
+    }
+
+    showLoading() {
+        this.loading.style.display = 'block';
+        this.downloadBtn.disabled = true;
+        this.hideMessages();
+    }
+
+    hideLoading() {
+        this.loading.style.display = 'none';
+        this.downloadBtn.disabled = false;
+    }
+
+    showError(message) {
+        this.error.innerHTML = message;
+        this.error.style.display = 'block';
+        this.hideLoading();
+    }
+
+    showSuccess(message) {
+        this.success.innerHTML = message;
+        this.success.style.display = 'block';
+        this.hideLoading();
+    }
+
+    extractVideoId(url) {
+        const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+        const match = url.match(regex);
+        return match ? match[1] : null;
+    }
+
+    // วิธีที่ 1: ใช้ CORS Proxy + Public API
+    async downloadWithCORSProxy(videoUrl, quality) {
+        try {
+            // ใช้ CORS Proxy เพื่อหลีกเลี่ยง CORS Error
+            const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+            const apiUrl = `${proxyUrl}https://api.vevioz.com/api/button/mp3/320`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    url: videoUrl,
+                    quality: quality
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.success) {
+                // สร้าง link ดาวน์โหลด
+                const link = document.createElement('a');
+                link.href = data.downloadUrl;
+                link.download = data.filename || 'video.mp4';
+                link.click();
                 
-                this.init();
+                return 'เริ่มดาวน์โหลดแล้ว!';
+            } else {
+                throw new Error(data.message || 'ไม่สามารถดาวน์โหลดได้');
             }
+            
+        } catch (error) {
+            throw new Error('เกิดข้อผิดพลาด: ' + error.message);
+        }
+    }
 
-            init() {
-                this.form.addEventListener('submit', (e) => this.handleSubmit(e));
-                this.urlInput.addEventListener('input', () => this.hideMessages());
+    // วิธีที่ 2: ใช้ YouTube Data API (เฉพาะข้อมูล)
+    async getVideoInfoFromAPI(videoId) {
+        try {
+            // ต้องมี Google API Key
+            const apiKey = 'YOUR_YOUTUBE_API_KEY';
+            const url = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${apiKey}&part=snippet,statistics,contentDetails`;
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.items && data.items.length > 0) {
+                const video = data.items[0];
+                return {
+                    title: video.snippet.title,
+                    channel: video.snippet.channelTitle,
+                    duration: this.parseDuration(video.contentDetails.duration),
+                    views: this.formatViews(video.statistics.viewCount),
+                    thumbnail: video.snippet.thumbnails.maxres?.url || video.snippet.thumbnails.high.url
+                };
+            } else {
+                throw new Error('ไม่พบวิดีโอ');
             }
+        } catch (error) {
+            throw new Error('ไม่สามารถดึงข้อมูลวิดีโอได้');
+        }
+    }
 
-            hideMessages() {
-                this.error.style.display = 'none';
-                this.success.style.display = 'none';
-                this.videoInfo.style.display = 'none';
-            }
+    // วิธีที่ 3: ส่งไปยัง External Service
+    redirectToDownloader(videoUrl, quality) {
+        const services = {
+            'savefrom': `https://savefrom.net/#url=${encodeURIComponent(videoUrl)}&utm_source=userjs`,
+            'y2mate': `https://www.y2mate.com/download?url=${encodeURIComponent(videoUrl)}`,
+            'ytmp3': `https://ytmp3.cc/en13/${encodeURIComponent(videoUrl)}`,
+            '9convert': `https://9convert.com/en30/download?url=${encodeURIComponent(videoUrl)}`
+        };
 
-            showLoading() {
-                this.loading.style.display = 'block';
-                this.downloadBtn.disabled = true;
-                this.hideMessages();
-            }
+        // เปิดหน้าต่างใหม่ไปยัง external service
+        window.open(services.savefrom, '_blank');
+        
+        return 'เปิดหน้าต่างใหม่สำหรับดาวน์โหลด กรุณาดาวน์โหลดจากหน้าต่างที่เปิดขึ้น';
+    }
 
-            hideLoading() {
-                this.loading.style.display = 'none';
-                this.downloadBtn.disabled = false;
-            }
+    parseDuration(duration) {
+        const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+        const hours = (match[1] || '').replace('H', '');
+        const minutes = (match[2] || '').replace('M', '');
+        const seconds = (match[3] || '').replace('S', '');
+        
+        if (hours) {
+            return `${hours}:${minutes.padStart(2, '0')}:${seconds.padStart(2, '0')}`;
+        } else {
+            return `${minutes || '0'}:${seconds.padStart(2, '0')}`;
+        }
+    }
 
-            showError(message) {
-                this.error.textContent = message;
-                this.error.style.display = 'block';
-                this.hideLoading();
-            }
+    formatViews(views) {
+        if (views >= 1000000) {
+            return (views / 1000000).toFixed(1) + 'M';
+        } else if (views >= 1000) {
+            return (views / 1000).toFixed(1) + 'K';
+        }
+        return parseInt(views).toLocaleString();
+    }
 
-            showSuccess(message) {
-                this.success.textContent = message;
-                this.success.style.display = 'block';
-                this.hideLoading();
-            }
+    async handleSubmit(e) {
+        e.preventDefault();
+        
+        const url = this.urlInput.value.trim();
+        const quality = document.querySelector('input[name="quality"]:checked').value;
 
-            extractVideoId(url) {
-                const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
-                const match = url.match(regex);
-                return match ? match[1] : null;
-            }
-
-            async getVideoInfo(videoId) {
-                // ในการใช้งานจริง คุณจะต้องใช้ YouTube API
-                // ที่นี่เป็นเพียงตัวอย่างการจำลอง
-                return new Promise((resolve) => {
-                    setTimeout(() => {
-                        resolve({
-                            title: `ตัวอย่างชื่อวิดีโอ (ID: ${videoId})`,
-                            channel: 'ตัวอย่างช่อง',
-                            duration: '5:30',
-                            views: '1,234,567'
-                        });
-                    }, 1000);
-                });
-            }
-
-            displayVideoInfo(info) {
-                document.getElementById('videoTitle').textContent = info.title;
-                document.getElementById('videoChannel').textContent = info.channel;
-                document.getElementById('videoDuration').textContent = info.duration;
-                document.getElementById('videoViews').textContent = info.views;
-                this.videoInfo.style.display = 'block';
-            }
-
-            async downloadVideo(videoId, quality) {
-                // ในการใช้งานจริง คุณจะต้องใช้ ytdl หรือ API อื่นๆ
-                // ที่นี่เป็นเพียงการจำลอง
-                return new Promise((resolve, reject) => {
-                    setTimeout(() => {
-                        // จำลองการดาวน์โหลด
-                        const success = Math.random() > 0.2; // 80% โอกาสสำเร็จ
-                        if (success) {
-                            // สร้าग link ดาวน์โหลดจำลอง
-                            const filename = `video_${videoId}_${quality}.mp4`;
-                            const blob = new Blob(['สำหรับการทดสอบ'], {type: 'video/mp4'});
-                            const url = URL.createObjectURL(blob);
-                            
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = filename;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                            
-                            resolve('ดาวน์โหลดเสร็จสิ้น!');
-                        } else {
-                            reject('เกิดข้อผิดพลาดในการดาวน์โหลด');
-                        }
-                    }, 2000);
-                });
-            }
-
-            async handleSubmit(e) {
-                e.preventDefault();
-                
-                const url = this.urlInput.value.trim();
-                const quality = document.querySelector('input[name="quality"]:checked').value;
-
-                if (!url) {
-                    this.showError('กรุณาใส่ URL วิดีโอ YouTube');
-                    return;
-                }
-
-                const videoId = this.extractVideoId(url);
-                if (!videoId) {
-                    this.showError('URL ไม่ถูกต้อง กรุณาใส่ URL วิดีโอ YouTube ที่ถูกต้อง');
-                    return;
-                }
-
-                this.showLoading();
-
-                try {
-                    // ดึงข้อมูลวิดีโอ
-                    const videoInfo = await this.getVideoInfo(videoId);
-                    this.displayVideoInfo(videoInfo);
-
-                    // ดาวน์โหลดวิดีโอ
-                    const result = await this.downloadVideo(videoId, quality);
-                    this.showSuccess(result);
-
-                } catch (error) {
-                    this.showError(error.toString());
-                }
-            }
+        if (!url) {
+            this.showError('กรุณาใส่ URL วิดีโอ YouTube');
+            return;
         }
 
-        // เริ่มต้นแอพ
-        document.addEventListener('DOMContentLoaded', () => {
-            new YouTubeDownloader();
-        });
+        const videoId = this.extractVideoId(url);
+        if (!videoId) {
+            this.showError('URL ไม่ถูกต้อง กรุณาใส่ URL วิดีโอ YouTube ที่ถูกต้อง');
+            return;
+        }
+
+        this.showLoading();
+
+        try {
+            // วิธีที่ง่ายที่สุด: ส่งไปยัง External Service
+            const result = this.redirectToDownloader(url, quality);
+            this.showSuccess(result);
+            
+            // หากต้องการใช้ API จริง ให้ uncomment บรรทัดด้านล่าง
+            // const result = await this.downloadWithCORSProxy(url, quality);
+            // this.showSuccess(result);
+
+        } catch (error) {
+            this.showError(`
+                <strong>ไม่สามารถดาวน์โหลดอัตโนมัติได้</strong><br>
+                ${error.message}<br><br>
+                <strong>ทางเลือกอื่น:</strong><br>
+                • <a href="https://savefrom.net/#url=${encodeURIComponent(url)}" target="_blank">SaveFrom.net</a><br>
+                • <a href="https://www.y2mate.com/download?url=${encodeURIComponent(url)}" target="_blank">Y2mate</a><br>
+                • <a href="https://ytmp3.cc/en13/${encodeURIComponent(url)}" target="_blank">YTMP3</a>
+            `);
+        }
+    }
+}
+
+// เริ่มต้นแอพ
+document.addEventListener('DOMContentLoaded', () => {
+    new YouTubeDownloader();
+});
     </script>
 </body>
 </html>
+
